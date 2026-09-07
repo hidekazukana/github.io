@@ -1,0 +1,51 @@
+# ビットコイン自動売買ボットの設定
+#
+# 初期状態はドライラン（ペーパートレード）です。
+# 実弾を撃つには mode.live_enabled: true にしたうえで、
+# 実行時に --live と環境変数 CONFIRM_LIVE_TRADING=yes が必要です。
+
+exchange:
+  # 発注先の取引所（ccxt の取引所 ID）: bitbank / bitflyer / coincheck など
+  id: bitbank
+  symbol: BTC/JPY
+  timeframe: 1h
+  # ローソク足の取得元。省略すると exchange.id をそのまま使う。
+  # bitflyer のように OHLCV API を持たない取引所を使う場合にここを指定する。
+  ohlcv_exchange_id: null
+
+mode:
+  # true の間は一切発注しない（内部の仮想残高だけが動く）
+  dry_run: true
+  # 実発注を許可するマスタースイッチ。--live だけでは実発注されない。
+  live_enabled: false
+
+strategy:
+  name: sma_cross
+  params:
+    fast: 9
+    slow: 26
+
+risk:
+  # 1回の買い注文で使う金額
+  order_jpy: 10000
+  # これを下回る注文は出さない（取引所の最小注文額対策）
+  min_order_jpy: 500
+  # 保有してよい上限
+  max_position_btc: 0.01
+  # その日の確定損失がこれを超えたら、以降の新規買いを止める
+  daily_loss_limit_jpy: 5000
+  # 直前の約定からこの分数が経つまで次の注文を出さない
+  cooldown_minutes: 60
+  # 売りシグナルで全量を手仕舞いする。false なら order_jpy 相当だけ売る。
+  sell_all: true
+
+paper:
+  # ドライラン時の初期資金
+  initial_jpy: 1000000
+  # 往復の手数料・スリッページの想定（片道あたりの割合）
+  fee_rate: 0.0012
+  slippage_rate: 0.0005
+
+state:
+  path: bot/state/paper_state.json
+  trades_csv: bot/state/trades.csv
