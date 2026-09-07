@@ -35,6 +35,9 @@ jobs:
 
       - run: pip install -r bot/requirements.txt
 
+      - name: 設定を点検（壊れた設定のまま発注しないため）
+        run: python -m bot.doctor --config bot/config.yml
+
       - name: 売買判断を 1 回実行
         env:
           # ドライランでは未設定でよい。実発注時のみ Secrets に登録する。

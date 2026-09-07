@@ -15,6 +15,7 @@ GitHub Actions の cron で定期的に起動し、ローソク足を見て売�
 | `state.py` | 残高・建玉・当日損益。JSON で持ち越す |
 | `engine.py` | シグナル → 審査 → 執行の 1 サイクル |
 | `main.py` | エントリポイント（1 起動 = 1 判断） |
+| `doctor.py` | 発注前の設定チェック（通信なし・注文なし） |
 | `backtest.py` | 同じロジックを過去データに当てる |
 
 本番もバックテストも `engine.step()` を通るので、両者の挙動が食い違わない。
@@ -24,6 +25,7 @@ GitHub Actions の cron で定期的に起動し、ローソク足を見て売�
 ```bash
 pip install -r bot/requirements.txt
 
+python -m bot.doctor                  # 設定の点検（まずこれ）
 python -m bot.main                    # ドライランで 1 回判断
 python -m bot.main --verbose          # 詳細ログ
 python -m bot.backtest --limit 1000   # 直近 1000 本でバックテスト
@@ -33,6 +35,21 @@ python -m pytest -q                   # テスト
 
 結果は `bot/state/paper_state.json`（残高・建玉）と `bot/state/trades.csv`（約定履歴）に残る。
 CSV は損益グラフや確定申告の材料にそのまま使える。
+
+## 取引所の選び方
+
+ccxt で見た国内取引所の対応状況（`python -m bot.doctor` で同じ判定ができる）。
+
+| 取引所 | 発注 | ローソク足 | 設定 |
+| --- | --- | --- | --- |
+| bitbank | OK | OK | `id: bitbank` のままでよい |
+| bitFlyer | OK | **なし** | `id: bitflyer` + `ohlcv_exchange_id: bitbank` |
+| Coincheck | OK | **なし** | `id: coincheck` + `ohlcv_exchange_id: bitbank` |
+| btcbox / Zaif | OK | **なし** | 同上 |
+| GMOコイン | ccxt 非対応 | — | このボットからは発注できない |
+
+足を別の取引所から取ると価格が完全には一致しない。判断が数千円ずれることがあるので、
+シグナルがシビアな戦略では bitbank に寄せるのが無難。
 
 ## 設定（`config.yml`）
 
