@@ -1,0 +1,78 @@
+# ビットコイン自動売買ボットの設定
+#
+# 初期状態はドライラン（ペーパートレード）です。
+# 実弾を撃つには mode.live_enabled: true にしたうえで、
+# 実行時に --live と環境変数 CONFIRM_LIVE_TRADING=yes が必要です。
+
+exchange:
+  # 発注先の取引所（ccxt の取引所 ID）
+  #
+  # 国内取引所のローソク足 API 対応状況（ccxt 基準）:
+  #   bitbank   ... 発注 OK / 足 OK        → そのまま使える
+  #   bitflyer  ... 発注 OK / 足 なし      → ohlcv_exchange_id: bitbank が必要
+  #   coincheck ... 発注 OK / 足 なし      → 同上
+  #   btcbox    ... 発注 OK / 足 なし      → 同上
+  #   zaif      ... 発注 OK / 足 なし      → 同上
+  #   GMOコイン ... ccxt 非対応            → このボットからは発注できない
+  # 設定を変えたら python -m bot.doctor で確認すること。
+  id: bitbank
+  symbol: BTC/JPY
+  # bitbank が対応する足: 1m 5m 15m 30m 1h 4h 8h 12h 1d 1w 1M
+  timeframe: 1h
+  # ローソク足の取得元。省略すると exchange.id をそのまま使う。
+  # 足を返さない取引所で売買する場合に、データだけ別の取引所から取るために使う。
+  ohlcv_exchange_id: null
+
+mode:
+  # true の間は一切発注しない（内部の仮想残高だけが動く）
+  dry_run: true
+  # 実発注を許可するマスタースイッチ。--live だけでは実発注されない。
+  live_enabled: false
+
+strategy:
+  name: sma_cross
+  params:
+    fast: 9
+    slow: 26
+
+# 以下は資金 1 万円・全額ベットを前提にした値。
+risk:
+  # 1回の買いに使う残高の割合。1.0 = 全額ベット。
+  # 割合なので、残高が増えても減っても常に「その時点の全額」を張る。
+  # 分散させたいなら 0.3（3 分割）などに下げる。
+  order_ratio: 1.0
+  # 1回の注文額の絶対上限。null なら上限なし（order_ratio だけで決まる）。
+  # 資金が増えても 1 回の張り幅を抑えたくなったらここに金額を入れる。
+  order_jpy: null
+  # これを下回る注文は出さない（取引所の最小注文額対策）
+  min_order_jpy: 500
+  # 取引所の最小注文数量。bitbank の BTC/JPY は 0.0001 BTC。
+  # 取引所や銘柄を変えたら必ず公式の仕様を確認して合わせること。
+  # 円建ての下限だけだと、価格が上がったときに数量が最小単位を割って注文が弾かれる。
+  min_order_btc: 0.0001
+  # 保有してよい上限。全額ベットではここが上限として効いてしまうと
+  # 「全額」にならないので、資金で買える量より十分に上へ置く
+  # （0.01 BTC は資金 1 万円なら BTC が 100 万円まで下げても届かない量）。
+  max_position_btc: 0.01
+  # その日の確定損失がこれを超えたら、以降の新規買いを止める（資金の 10%）
+  daily_loss_limit_jpy: 1000
+  # 直前の約定からこの分数が経つまで次の注文を出さない
+  cooldown_minutes: 60
+  # 売りシグナルで全量を手仕舞いする。false なら order_jpy 相当だけ売る。
+  sell_all: true
+  # 残高を使い切る注文のときに残しておく余裕（手数料＋スリッページ）。
+  # bitbank の taker は 0.12% なので、0.2% あれば約定価格が多少滑っても足りる。
+  # これが無いと「残高ちょうどの注文」が取引所に拒否され続ける。
+  fee_buffer_rate: 0.002
+
+paper:
+  # ドライラン時の初期資金。実際に入れる予定の額に合わせておくと、
+  # ドライランの結果がそのまま実運用の見込みになる。
+  initial_jpy: 10000
+  # 往復の手数料・スリッページの想定（片道あたりの割合）
+  fee_rate: 0.0012
+  slippage_rate: 0.0005
+
+state:
+  path: bot/state/paper_state.json
+  trades_csv: bot/state/trades.csv

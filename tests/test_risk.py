@@ -1,0 +1,183 @@
+from datetime import datetime, timedelta, timezone
+
+import pytest
+
+from bot.config import RiskConfig
+from bot.risk import evaluate
+from bot.state import State
+from bot.strategy import BUY, HOLD, SELL, Signal
+
+NOW = datetime(2026, 1, 10, 12, 0, tzinfo=timezone.utc)
+PRICE = 10_000_000.0
+
+
+def cfg(**over) -> RiskConfig:
+    base = dict(
+        order_jpy=10_000,
+        min_order_jpy=500,
+        max_position_btc=0.01,
+        daily_loss_limit_jpy=5_000,
+        cooldown_minutes=60,
+        sell_all=True,
+    )
+    base.update(over)
+    return RiskConfig(**base)
+
+
+def test_hold_never_trades():
+    d = evaluate(Signal(HOLD, "-"), State(jpy=1_000_000), PRICE, cfg(), NOW)
+    assert d.blocked
+
+
+def test_buy_sizes_by_order_jpy():
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), PRICE, cfg(), NOW)
+    assert d.approved
+    assert d.amount == 0.001  # 10,000 円 / 10,000,000 円
+
+
+def test_buy_is_capped_by_position_limit():
+    state = State(jpy=1_000_000, btc=0.0095, avg_entry=PRICE)
+    d = evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW)
+    assert d.approved
+    assert d.amount == 0.0005  # 上限 0.01 BTC までの残り
+
+
+def test_buy_blocked_when_position_is_full():
+    state = State(jpy=1_000_000, btc=0.01, avg_entry=PRICE)
+    assert evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW).blocked
+
+
+def test_buy_blocked_below_minimum_notional():
+    d = evaluate(Signal(BUY, "-"), State(jpy=400), PRICE, cfg(), NOW)
+    assert d.blocked
+    assert "最小注文額" in d.reason
+
+
+def test_buy_blocked_during_cooldown():
+    state = State(jpy=1_000_000, last_trade_at=(NOW - timedelta(minutes=30)).isoformat())
+    d = evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW)
+    assert d.blocked
+    assert "クールダウン" in d.reason
+
+
+def test_buy_allowed_after_cooldown():
+    state = State(jpy=1_000_000, last_trade_at=(NOW - timedelta(minutes=61)).isoformat())
+    assert evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW).approved
+
+
+def test_buy_blocked_after_daily_loss_limit():
+    state = State(jpy=1_000_000, realized_pnl_by_day={"2026-01-10": -5_000})
+    d = evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW)
+    assert d.blocked
+    assert "損失" in d.reason
+
+
+def test_yesterdays_loss_does_not_block_today():
+    state = State(jpy=1_000_000, realized_pnl_by_day={"2026-01-09": -50_000})
+    assert evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW).approved
+
+
+def test_sell_exits_the_whole_position():
+    state = State(jpy=0, btc=0.004, avg_entry=PRICE)
+    d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(), NOW)
+    assert d.approved
+    assert d.amount == 0.004
+
+
+def test_sell_is_not_blocked_by_cooldown_or_loss_limit():
+    state = State(
+        jpy=0,
+        btc=0.004,
+        avg_entry=PRICE,
+        last_trade_at=NOW.isoformat(),
+        realized_pnl_by_day={"2026-01-10": -100_000},
+    )
+    assert evaluate(Signal(SELL, "-"), state, PRICE, cfg(), NOW).approved
+
+
+def test_sell_blocked_without_position():
+    assert evaluate(Signal(SELL, "-"), State(jpy=1_000), PRICE, cfg(), NOW).blocked
+
+
+def test_sell_blocked_for_dust():
+    state = State(jpy=0, btc=0.00001, avg_entry=PRICE)  # 100 円ぶん
+    d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(), NOW)
+    assert d.blocked
+    assert "ダスト" in d.reason
+
+
+def test_buy_blocked_below_exchange_minimum_amount():
+    # 1 BTC = 5 億円まで上がると、10,000 円では 0.00002 BTC しか買えない
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), 500_000_000.0, cfg(), NOW)
+    assert d.blocked
+    assert "最小単位" in d.reason
+
+
+def test_buy_allowed_at_exactly_the_minimum_amount():
+    # 10,000 円 / 1 億円 = ちょうど 0.0001 BTC
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), 100_000_000.0, cfg(max_position_btc=1), NOW)
+    assert d.approved
+    assert d.amount == 0.0001
+
+
+def test_sell_blocked_when_position_is_below_exchange_minimum():
+    state = State(jpy=0, btc=0.00005, avg_entry=PRICE)  # 500 円ぶん = 円建て下限は満たす
+    d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(min_order_jpy=100), NOW)
+    assert d.blocked
+    assert "最小単位" in d.reason
+
+
+def test_buy_leaves_room_for_fees_when_spending_the_whole_balance():
+    # 残高 = 1 回の注文額。手数料ぶんを引かないと取引所に拒否される
+    state = State(jpy=10_000)
+    d = evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW)
+    assert d.approved
+
+    taker_fee = d.amount * PRICE * 0.0012
+    assert d.amount * PRICE + taker_fee <= state.jpy
+
+
+def test_fee_buffer_does_not_shrink_orders_with_ample_balance():
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), PRICE, cfg(), NOW)
+    assert d.amount == 0.001  # 10,000 円ぶんのまま
+
+
+def test_full_bet_uses_the_whole_balance_and_follows_it():
+    # order_ratio 1.0 = 全額ベット。残高が増えれば張る額も増える
+    for jpy in (10_000, 25_000):
+        state = State(jpy=jpy)
+        d = evaluate(
+            Signal(BUY, "-"), state, PRICE, cfg(order_jpy=None, max_position_btc=1), NOW
+        )
+        assert d.approved
+        spent = d.amount * PRICE
+        assert spent == pytest.approx(jpy / 1.002, rel=1e-3)
+        # 手数料を足しても残高を超えない
+        assert spent * 1.0012 <= jpy
+
+
+def test_order_ratio_splits_the_balance():
+    d = evaluate(
+        Signal(BUY, "-"),
+        State(jpy=10_000),
+        PRICE,
+        cfg(order_jpy=None, order_ratio=0.3, max_position_btc=1),
+        NOW,
+    )
+    assert d.amount * PRICE == pytest.approx(3_000, rel=1e-3)
+
+
+def test_order_jpy_caps_the_ratio():
+    d = evaluate(
+        Signal(BUY, "-"), State(jpy=100_000), PRICE, cfg(order_jpy=5_000, max_position_btc=1), NOW
+    )
+    assert d.amount * PRICE == pytest.approx(5_000, rel=1e-3)
+
+
+def test_position_cap_still_binds_under_a_full_bet():
+    # 残高 10,000 円 / 価格 10 万円 = 0.1 BTC 買えるが、上限 0.05 BTC で頭打ち
+    d = evaluate(
+        Signal(BUY, "-"), State(jpy=10_000), 100_000.0, cfg(order_jpy=None, max_position_btc=0.05), NOW
+    )
+    assert d.approved
+    assert d.amount == 0.05
