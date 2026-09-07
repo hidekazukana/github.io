@@ -66,6 +66,17 @@ def run_checks(cfg: Config, ccxt_module, env: Mapping[str, str] | None = None) -
                 f" / 当日損失上限 {cfg.risk.daily_loss_limit_jpy:,.0f} 円",
             )
         )
+        # 価格が上がるほど 1 回あたりの数量は減る。最小単位を割る価格を先に知らせておく。
+        if cfg.risk.min_order_btc > 0:
+            ceiling = cfg.risk.order_jpy / cfg.risk.min_order_btc
+            checks.append(
+                Check(
+                    "最小注文数量",
+                    OK,
+                    f"{cfg.risk.min_order_btc:.8f} BTC"
+                    f"（BTC が {ceiling:,.0f} 円を超えると 1 回 {cfg.risk.order_jpy:,.0f} 円では発注できなくなります）",
+                )
+            )
     except Exception as exc:
         checks.append(Check("リスク設定", NG, str(exc)))
 

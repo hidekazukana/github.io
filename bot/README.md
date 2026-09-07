@@ -58,6 +58,8 @@ ccxt で見た国内取引所の対応状況（`python -m bot.doctor` で同じ�
 | キー | 意味 |
 | --- | --- |
 | `risk.order_jpy` | 1 回の買いに使う金額 |
+| `risk.min_order_jpy` | これを下回る注文は出さない |
+| `risk.min_order_btc` | 取引所の最小注文数量（bitbank の BTC/JPY は 0.0001 BTC） |
 | `risk.max_position_btc` | 保有上限。ナンピンで膨らむのを防ぐ |
 | `risk.daily_loss_limit_jpy` | 当日の確定損失がこれを超えたら新規買いを停止 |
 | `risk.cooldown_minutes` | 連続約定の間隔制限 |
@@ -65,6 +67,10 @@ ccxt で見た国内取引所の対応状況（`python -m bot.doctor` で同じ�
 
 手仕舞い（売り）はクールダウンと損失上限の対象外にしてある。
 逃げる動きまで止めると含み損を抱えたまま身動きが取れなくなるため。
+
+注文サイズは円建てと数量の両方で下限を見ている。円建てだけだと、BTC 価格が上がったときに
+数量が取引所の最小単位を割り、注文が弾かれ続ける。`python -m bot.doctor` が
+「BTC が◯円を超えると発注できなくなる」上限価格を教えてくれる。
 
 戦略を足したいときは `strategy.py` の `Strategy` を継承して `STRATEGIES` に登録する。
 シグナルは確定足の列だけから決まる純関数なので、そのままバックテストできる。

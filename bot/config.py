@@ -37,6 +37,7 @@ class StrategyConfig:
 class RiskConfig:
     order_jpy: float = 10000
     min_order_jpy: float = 500
+    min_order_btc: float = 0.0001
     max_position_btc: float = 0.01
     daily_loss_limit_jpy: float = 5000
     cooldown_minutes: int = 60
@@ -94,6 +95,10 @@ class Config:
     def validate(self) -> None:
         if self.risk.order_jpy < self.risk.min_order_jpy:
             raise ValueError("risk.order_jpy が risk.min_order_jpy を下回っています")
+        if self.risk.min_order_btc < 0:
+            raise ValueError("risk.min_order_btc は 0 以上にしてください")
+        if self.risk.max_position_btc < self.risk.min_order_btc:
+            raise ValueError("risk.max_position_btc が risk.min_order_btc を下回っています")
         if self.risk.max_position_btc <= 0:
             raise ValueError("risk.max_position_btc は正の数にしてください")
         if self.risk.daily_loss_limit_jpy <= 0:

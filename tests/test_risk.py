@@ -102,3 +102,24 @@ def test_sell_blocked_for_dust():
     d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(), NOW)
     assert d.blocked
     assert "ダスト" in d.reason
+
+
+def test_buy_blocked_below_exchange_minimum_amount():
+    # 1 BTC = 5 億円まで上がると、10,000 円では 0.00002 BTC しか買えない
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), 500_000_000.0, cfg(), NOW)
+    assert d.blocked
+    assert "最小単位" in d.reason
+
+
+def test_buy_allowed_at_exactly_the_minimum_amount():
+    # 10,000 円 / 1 億円 = ちょうど 0.0001 BTC
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), 100_000_000.0, cfg(max_position_btc=1), NOW)
+    assert d.approved
+    assert d.amount == 0.0001
+
+
+def test_sell_blocked_when_position_is_below_exchange_minimum():
+    state = State(jpy=0, btc=0.00005, avg_entry=PRICE)  # 500 円ぶん = 円建て下限は満たす
+    d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(min_order_jpy=100), NOW)
+    assert d.blocked
+    assert "最小単位" in d.reason

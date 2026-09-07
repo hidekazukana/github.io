@@ -89,6 +89,13 @@ def _evaluate_buy(state: State, price: float, cfg: RiskConfig, now: datetime) ->
             f"（残高 {state.jpy:,.0f} 円 / 建玉余力 {room_btc:.8f} BTC）",
         )
 
+    if amount < cfg.min_order_btc:
+        return RiskDecision(
+            False,
+            f"注文数量 {amount:.8f} BTC が取引所の最小単位 {cfg.min_order_btc:.8f} BTC を下回ります"
+            f"（{notional:,.0f} 円ぶん）",
+        )
+
     return RiskDecision(True, f"{notional:,.0f} 円ぶんの買い", BUY, amount)
 
 
@@ -106,6 +113,13 @@ def _evaluate_sell(state: State, price: float, cfg: RiskConfig) -> RiskDecision:
         return RiskDecision(
             False,
             f"売却額 {notional:,.0f} 円が最小注文額 {cfg.min_order_jpy:,.0f} 円を下回ります（ダスト）",
+        )
+
+    if amount < cfg.min_order_btc:
+        # 建玉が最小単位に満たない＝取引所が受け付けないので、手動で処分するしかない
+        return RiskDecision(
+            False,
+            f"建玉 {amount:.8f} BTC が取引所の最小単位 {cfg.min_order_btc:.8f} BTC を下回ります（ダスト）",
         )
 
     return RiskDecision(True, f"{amount:.8f} BTC の売り", SELL, amount)

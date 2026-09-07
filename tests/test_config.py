@@ -27,3 +27,9 @@ def test_order_below_the_minimum_is_rejected():
     cfg = Config.from_dict({"risk": {"order_jpy": 100, "min_order_jpy": 500}})
     with pytest.raises(ValueError):
         cfg.validate()
+
+
+def test_position_cap_below_the_exchange_minimum_is_rejected():
+    cfg = Config.from_dict({"risk": {"max_position_btc": 0.00001, "min_order_btc": 0.0001}})
+    with pytest.raises(ValueError, match="min_order_btc"):
+        cfg.validate()
