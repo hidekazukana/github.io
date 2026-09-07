@@ -78,7 +78,10 @@ def _evaluate_buy(state: State, price: float, cfg: RiskConfig, now: datetime) ->
             False, f"建玉が上限 {cfg.max_position_btc} BTC に達しています（現在 {state.btc:.8f} BTC）"
         )
 
-    budget = min(cfg.order_jpy, state.jpy)
+    # 残高いっぱいまで注文すると、手数料とスリッページのぶんだけ足りずに
+    # 取引所へ弾かれる。残高を上限にするときだけ、その余裕を先に差し引く。
+    spendable = state.jpy / (1 + cfg.fee_buffer_rate)
+    budget = min(cfg.order_jpy, spendable)
     amount = floor_amount(min(budget / price, room_btc))
     notional = amount * price
 

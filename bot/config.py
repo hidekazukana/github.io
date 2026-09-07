@@ -42,6 +42,7 @@ class RiskConfig:
     daily_loss_limit_jpy: float = 5000
     cooldown_minutes: int = 60
     sell_all: bool = True
+    fee_buffer_rate: float = 0.002
 
 
 @dataclass
@@ -105,3 +106,5 @@ class Config:
             raise ValueError("risk.daily_loss_limit_jpy は正の数にしてください")
         if self.risk.cooldown_minutes < 0:
             raise ValueError("risk.cooldown_minutes は 0 以上にしてください")
+        if not 0 <= self.risk.fee_buffer_rate < 1:
+            raise ValueError("risk.fee_buffer_rate は 0 以上 1 未満にしてください")

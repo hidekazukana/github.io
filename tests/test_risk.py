@@ -123,3 +123,18 @@ def test_sell_blocked_when_position_is_below_exchange_minimum():
     d = evaluate(Signal(SELL, "-"), state, PRICE, cfg(min_order_jpy=100), NOW)
     assert d.blocked
     assert "最小単位" in d.reason
+
+
+def test_buy_leaves_room_for_fees_when_spending_the_whole_balance():
+    # 残高 = 1 回の注文額。手数料ぶんを引かないと取引所に拒否される
+    state = State(jpy=10_000)
+    d = evaluate(Signal(BUY, "-"), state, PRICE, cfg(), NOW)
+    assert d.approved
+
+    taker_fee = d.amount * PRICE * 0.0012
+    assert d.amount * PRICE + taker_fee <= state.jpy
+
+
+def test_fee_buffer_does_not_shrink_orders_with_ample_balance():
+    d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), PRICE, cfg(), NOW)
+    assert d.amount == 0.001  # 10,000 円ぶんのまま
