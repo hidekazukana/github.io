@@ -22,6 +22,7 @@ def config(**strategy_params) -> Config:
     cfg.strategy.params = {"fast": 2, "slow": 4} | strategy_params
     cfg.risk.cooldown_minutes = 0
     # テストは 100 円台のダミー価格を使うので、実運用向けの下限・上限は外しておく
+    cfg.risk.order_jpy = 10_000
     cfg.risk.max_position_btc = 1_000
     cfg.risk.min_order_jpy = 1
     cfg.paper.fee_rate = 0.0

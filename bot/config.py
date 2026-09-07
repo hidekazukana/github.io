@@ -35,11 +35,11 @@ class StrategyConfig:
 
 @dataclass
 class RiskConfig:
-    order_jpy: float = 10000
+    order_jpy: float = 3000
     min_order_jpy: float = 500
     min_order_btc: float = 0.0001
-    max_position_btc: float = 0.01
-    daily_loss_limit_jpy: float = 5000
+    max_position_btc: float = 0.001
+    daily_loss_limit_jpy: float = 1000
     cooldown_minutes: int = 60
     sell_all: bool = True
     fee_buffer_rate: float = 0.002
@@ -47,7 +47,7 @@ class RiskConfig:
 
 @dataclass
 class PaperConfig:
-    initial_jpy: float = 1000000
+    initial_jpy: float = 10000
     fee_rate: float = 0.0012
     slippage_rate: float = 0.0005
 
