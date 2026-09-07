@@ -26,6 +26,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 状態ファイルの push が競合したときにリベースし直せるよう、浅いクローンにしない
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -56,4 +59,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add bot/state
           git commit -m "chore(bot): 取引状態を更新 [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+          # 人手のコミットと衝突したときに残高を取りこぼさないよう、取り込んで押し直す
+          for attempt in 1 2 3; do
+            if git push origin HEAD:${{ github.ref_name }}; then
+              exit 0
+            fi
+            echo "push に失敗しました。リモートを取り込んで再試行します ($attempt/3)"
+            git pull --rebase origin ${{ github.ref_name }} || exit 1
+          done
+          echo "3 回試しても push できませんでした。次回の実行は前回の残高から始まります"
+          exit 1
