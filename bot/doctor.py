@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .config import Config
+from .risk import order_budget
 from .state import State
 from .strategy import build_strategy
 
@@ -47,6 +48,16 @@ def run_checks(cfg: Config, ccxt_module, env: Mapping[str, str] | None = None) -
     env = env if env is not None else os.environ
     checks: list[Check] = []
 
+    # 注文サイズは残高に対する割合で決まるので、先に残高を掴んでおく
+    state_path = Path(cfg.state.path)
+    state: State | None = None
+    state_error: str | None = None
+    try:
+        state = State.load(state_path, cfg.paper.initial_jpy)
+    except Exception as exc:
+        state_error = str(exc)
+    balance = state.jpy if state else cfg.paper.initial_jpy
+
     # --- 戦略とリスク設定 ---
     try:
         strategy = build_strategy(cfg.strategy.name, cfg.strategy.params)
@@ -58,25 +69,42 @@ def run_checks(cfg: Config, ccxt_module, env: Mapping[str, str] | None = None) -
 
     try:
         cfg.validate()
+        budget = order_budget(balance, cfg.risk)
+        share = f"残高の {cfg.risk.order_ratio:.0%}"
+        cap = f" / 1回の上限 {cfg.risk.order_jpy:,.0f} 円" if cfg.risk.order_jpy is not None else ""
         checks.append(
             Check(
                 "リスク設定",
-                OK,
-                f"1回 {cfg.risk.order_jpy:,.0f} 円 / 建玉上限 {cfg.risk.max_position_btc} BTC"
-                f" / 当日損失上限 {cfg.risk.daily_loss_limit_jpy:,.0f} 円",
+                WARN if cfg.risk.order_ratio >= 1 else OK,
+                f"1回 {share} = 残高 {balance:,.0f} 円なら {budget:,.0f} 円{cap}"
+                f" / 建玉上限 {cfg.risk.max_position_btc} BTC"
+                f" / 当日損失上限 {cfg.risk.daily_loss_limit_jpy:,.0f} 円"
+                + ("（★全額ベット★ 1 回の判断に資金の全額が乗ります）" if cfg.risk.order_ratio >= 1 else ""),
             )
         )
         # 価格が上がるほど 1 回あたりの数量は減る。最小単位を割る価格を先に知らせておく。
-        if cfg.risk.min_order_btc > 0:
-            ceiling = cfg.risk.order_jpy / cfg.risk.min_order_btc
+        if cfg.risk.min_order_btc > 0 and budget > 0:
+            ceiling = budget / cfg.risk.min_order_btc
             checks.append(
                 Check(
                     "最小注文数量",
                     OK,
                     f"{cfg.risk.min_order_btc:.8f} BTC"
-                    f"（BTC が {ceiling:,.0f} 円を超えると 1 回 {cfg.risk.order_jpy:,.0f} 円では発注できなくなります）",
+                    f"（BTC が {ceiling:,.0f} 円を超えると {budget:,.0f} 円では発注できなくなります）",
                 )
             )
+        # 建玉上限が資金より小さいと、全額ベットのつもりでも途中で頭を打つ
+        if budget > 0 and cfg.risk.max_position_btc > 0:
+            floor_price = budget / cfg.risk.max_position_btc
+            if cfg.risk.order_ratio >= 1:
+                checks.append(
+                    Check(
+                        "建玉上限",
+                        OK,
+                        f"{cfg.risk.max_position_btc} BTC"
+                        f"（BTC が {floor_price:,.0f} 円を下回ると、全額ではなくここで頭打ちになります）",
+                    )
+                )
     except Exception as exc:
         checks.append(Check("リスク設定", NG, str(exc)))
 
@@ -135,17 +163,21 @@ def run_checks(cfg: Config, ccxt_module, env: Mapping[str, str] | None = None) -
         checks.append(Check("API キー", OK, "設定済み" if has_keys else "未設定（ドライランには不要）"))
 
     # --- 状態ファイル ---
-    path = Path(cfg.state.path)
-    if not path.exists():
-        checks.append(Check("状態ファイル", OK, f"{path} は未作成（初回は {cfg.paper.initial_jpy:,.0f} 円から開始）"))
+    if state_error is not None:
+        checks.append(Check("状態ファイル", NG, f"{state_path} を読めません: {state_error}"))
+    elif not state_path.exists():
+        checks.append(
+            Check("状態ファイル", OK, f"{state_path} は未作成（初回は {cfg.paper.initial_jpy:,.0f} 円から開始）")
+        )
     else:
-        try:
-            state = State.load(path, cfg.paper.initial_jpy)
-            checks.append(
-                Check("状態ファイル", OK, f"残高 {state.jpy:,.0f} 円 / 建玉 {state.btc:.8f} BTC / 約定 {state.trade_count} 回")
+        assert state is not None
+        checks.append(
+            Check(
+                "状態ファイル",
+                OK,
+                f"残高 {state.jpy:,.0f} 円 / 建玉 {state.btc:.8f} BTC / 約定 {state.trade_count} 回",
             )
-        except Exception as exc:
-            checks.append(Check("状態ファイル", NG, f"{path} を読めません: {exc}"))
+        )
 
     return checks
 
@@ -169,8 +201,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[{c.level:>2}] {c.name:<{width}}  {c.detail}")
 
     failed = [c for c in checks if c.failed]
+    warned = [c for c in checks if c.level == WARN]
     print()
-    print(f"{len(checks) - len(failed)}/{len(checks)} 項目 OK" if not failed else f"{len(failed)} 項目に問題があります")
+    if failed:
+        print(f"{len(failed)} 項目に問題があります")
+    else:
+        note = f"（注意 {len(warned)} 件）" if warned else ""
+        print(f"{len(checks) - len(warned)}/{len(checks)} 項目 OK{note}")
     return 1 if failed else 0
 
 

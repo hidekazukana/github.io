@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from bot.config import RiskConfig
 from bot.risk import evaluate
 from bot.state import State
@@ -138,3 +140,44 @@ def test_buy_leaves_room_for_fees_when_spending_the_whole_balance():
 def test_fee_buffer_does_not_shrink_orders_with_ample_balance():
     d = evaluate(Signal(BUY, "-"), State(jpy=1_000_000), PRICE, cfg(), NOW)
     assert d.amount == 0.001  # 10,000 円ぶんのまま
+
+
+def test_full_bet_uses_the_whole_balance_and_follows_it():
+    # order_ratio 1.0 = 全額ベット。残高が増えれば張る額も増える
+    for jpy in (10_000, 25_000):
+        state = State(jpy=jpy)
+        d = evaluate(
+            Signal(BUY, "-"), state, PRICE, cfg(order_jpy=None, max_position_btc=1), NOW
+        )
+        assert d.approved
+        spent = d.amount * PRICE
+        assert spent == pytest.approx(jpy / 1.002, rel=1e-3)
+        # 手数料を足しても残高を超えない
+        assert spent * 1.0012 <= jpy
+
+
+def test_order_ratio_splits_the_balance():
+    d = evaluate(
+        Signal(BUY, "-"),
+        State(jpy=10_000),
+        PRICE,
+        cfg(order_jpy=None, order_ratio=0.3, max_position_btc=1),
+        NOW,
+    )
+    assert d.amount * PRICE == pytest.approx(3_000, rel=1e-3)
+
+
+def test_order_jpy_caps_the_ratio():
+    d = evaluate(
+        Signal(BUY, "-"), State(jpy=100_000), PRICE, cfg(order_jpy=5_000, max_position_btc=1), NOW
+    )
+    assert d.amount * PRICE == pytest.approx(5_000, rel=1e-3)
+
+
+def test_position_cap_still_binds_under_a_full_bet():
+    # 残高 10,000 円 / 価格 10 万円 = 0.1 BTC 買えるが、上限 0.05 BTC で頭打ち
+    d = evaluate(
+        Signal(BUY, "-"), State(jpy=10_000), 100_000.0, cfg(order_jpy=None, max_position_btc=0.05), NOW
+    )
+    assert d.approved
+    assert d.amount == 0.05

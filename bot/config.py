@@ -35,7 +35,8 @@ class StrategyConfig:
 
 @dataclass
 class RiskConfig:
-    order_jpy: float = 3000
+    order_ratio: float = 1.0
+    order_jpy: float | None = None
     min_order_jpy: float = 500
     min_order_btc: float = 0.0001
     max_position_btc: float = 0.001
@@ -94,7 +95,9 @@ class Config:
         return cls.from_dict(raw)
 
     def validate(self) -> None:
-        if self.risk.order_jpy < self.risk.min_order_jpy:
+        if not 0 < self.risk.order_ratio <= 1:
+            raise ValueError("risk.order_ratio は 0 より大きく 1 以下にしてください")
+        if self.risk.order_jpy is not None and self.risk.order_jpy < self.risk.min_order_jpy:
             raise ValueError("risk.order_jpy が risk.min_order_jpy を下回っています")
         if self.risk.min_order_btc < 0:
             raise ValueError("risk.min_order_btc は 0 以上にしてください")

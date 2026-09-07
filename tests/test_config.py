@@ -33,3 +33,21 @@ def test_position_cap_below_the_exchange_minimum_is_rejected():
     cfg = Config.from_dict({"risk": {"max_position_btc": 0.00001, "min_order_btc": 0.0001}})
     with pytest.raises(ValueError, match="min_order_btc"):
         cfg.validate()
+
+
+def test_order_ratio_must_be_within_range():
+    for bad in (0, 1.5, -0.1):
+        with pytest.raises(ValueError, match="order_ratio"):
+            Config.from_dict({"risk": {"order_ratio": bad}}).validate()
+
+
+def test_order_jpy_is_optional():
+    cfg = Config.from_dict({"risk": {"order_jpy": None}})
+    cfg.validate()
+    assert cfg.risk.order_jpy is None
+
+
+def test_shipped_config_is_a_full_bet():
+    cfg = Config.load("bot/config.yml")
+    assert cfg.risk.order_ratio == 1.0
+    assert cfg.risk.order_jpy is None

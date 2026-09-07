@@ -38,6 +38,23 @@ def floor_amount(amount: float) -> float:
     return math.floor(amount * 10**SATOSHI) / 10**SATOSHI
 
 
+def order_budget(jpy: float, cfg: RiskConfig) -> float:
+    """1 回の買いに使える金額。
+
+    残高に対する割合（order_ratio）で決め、order_jpy があればその額で頭を押さえる。
+    割合で持つのは、残高が増減しても張り方の比率を保つため
+    （order_ratio: 1.0 なら残高がいくつでも常に全額ベットになる）。
+
+    残高いっぱいまで注文すると手数料とスリッページのぶんだけ足りずに取引所へ弾かれるので、
+    その余裕を先に差し引いた額を超えないようにする。
+    """
+    spendable = jpy / (1 + cfg.fee_buffer_rate)
+    budget = min(jpy * cfg.order_ratio, spendable)
+    if cfg.order_jpy is not None:
+        budget = min(budget, cfg.order_jpy)
+    return budget
+
+
 def evaluate(
     signal: Signal,
     state: State,
@@ -78,10 +95,7 @@ def _evaluate_buy(state: State, price: float, cfg: RiskConfig, now: datetime) ->
             False, f"建玉が上限 {cfg.max_position_btc} BTC に達しています（現在 {state.btc:.8f} BTC）"
         )
 
-    # 残高いっぱいまで注文すると、手数料とスリッページのぶんだけ足りずに
-    # 取引所へ弾かれる。残高を上限にするときだけ、その余裕を先に差し引く。
-    spendable = state.jpy / (1 + cfg.fee_buffer_rate)
-    budget = min(cfg.order_jpy, spendable)
+    budget = order_budget(state.jpy, cfg)
     amount = floor_amount(min(budget / price, room_btc))
     notional = amount * price
 
