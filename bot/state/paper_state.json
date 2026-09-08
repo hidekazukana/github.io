@@ -1,0 +1,10 @@
+{
+  "jpy": 10000.0,
+  "btc": 0.0,
+  "avg_entry": 0.0,
+  "realized_pnl_by_day": {},
+  "last_trade_at": null,
+  "last_signal": "hold",
+  "updated_at": "2026-09-08T11:01:45+00:00",
+  "trade_count": 0
+}
