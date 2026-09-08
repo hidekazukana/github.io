@@ -92,6 +92,8 @@ def main(argv: list[str] | None = None) -> int:
             "" if f.dry_run else f" order_id={f.order_id}",
         )
         append_trade_csv(cfg.state.trades_csv, result, state)
+    elif result.unfilled:
+        log.warning("注文を出しましたが約定しませんでした（%s）。板に残った注文は取り消し済みです", result.decision.reason)
     else:
         log.info("見送り: %s", result.decision.reason)
 
