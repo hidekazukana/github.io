@@ -25,7 +25,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ビットコイン自動売買ボット（既定はドライラン）")
     parser.add_argument("--config", default="bot/config.yml", help="設定ファイル")
     parser.add_argument("--live", action="store_true", help="実発注する（要 live_enabled と確認用環境変数）")
-    parser.add_argument("--limit", type=int, default=200, help="取得するローソク足の本数")
+    # 取引所によっては 1 日ぶんずつしか返らず、本数を増やすほどリクエスト回数が増える。
+    # 判断に要るのは warmup ぶんだけなので、既定は控えめにしておく。
+    parser.add_argument("--limit", type=int, default=60, help="取得するローソク足の本数")
     parser.add_argument("--verbose", action="store_true", help="デバッグログを出す")
     return parser.parse_args(argv)
 
