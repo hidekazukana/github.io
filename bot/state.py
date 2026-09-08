@@ -66,9 +66,17 @@ class State:
 
     # --- 更新 -----------------------------------------------------------
 
-    def apply_buy(self, amount: float, price: float, fee: float, now: datetime) -> None:
+    def apply_buy(
+        self, amount: float, price: float, fee: float, now: datetime, allow_overdraw: bool = False
+    ) -> None:
+        """買いを記録する。
+
+        allow_overdraw は実弾専用。取引所で本当に約定してしまった以上、
+        残高計算が合わないからといって記録を拒むと、実際は持っているのに
+        帳簿上は持っていないという最悪の食い違いが残る。事実を優先する。
+        """
         cost = amount * price + fee
-        if cost > self.jpy + 1e-9:
+        if cost > self.jpy + 1e-9 and not allow_overdraw:
             raise ValueError("残高より大きい買い注文は約定できません")
         total_btc = self.btc + amount
         # 平均取得単価は手数料込みで持つ（実現損益を実態に寄せるため）

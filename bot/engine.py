@@ -48,6 +48,11 @@ class StepResult:
     def traded(self) -> bool:
         return self.fill is not None
 
+    @property
+    def unfilled(self) -> bool:
+        """審査を通って注文したのに、1 枚も約定しなかった。"""
+        return self.decision.approved and self.fill is None
+
 
 def step(
     candles: Sequence[Candle],
