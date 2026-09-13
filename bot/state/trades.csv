@@ -1,0 +1,2 @@
+timestamp,side,amount_btc,price_jpy,notional_jpy,fee_jpy,realized_pnl_jpy,jpy_balance,btc_position,equity_jpy,dry_run,reason
+2026-09-13T21:21:22+00:00,buy,0.00083971,11890961.51,9984.96,11.98,0.00,3.06,0.00083971,9983.03,yes,ゴールデンクロス (SMA9 > SMA26)
