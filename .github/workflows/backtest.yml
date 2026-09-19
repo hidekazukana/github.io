@@ -15,24 +15,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: bot/requirements.txt
-      - run: pip install -r bot/requirements.txt
+      - run: pip install -r bot/requirements.txt yfinance
 
-      - name: 日本株の日足を取ってくる
-        run: |
-          set -e
-          mkdir -p /tmp/stock
-          # stooq の無料日足 CSV（認証不要）。Date,Open,High,Low,Close,Volume で返る
-          for code in 1321 1306 7203 6758 9984 6857; do
-            curl -sS --retry 3 --max-time 60 \
-              -o "/tmp/stock/$code.raw.csv" \
-              "https://stooq.com/q/d/l/?s=$code.jp&i=d"
-            echo "$code: $(wc -l < /tmp/stock/$code.raw.csv) 行"
-            head -2 "/tmp/stock/$code.raw.csv"
-          done
-
-      - name: 同じ戦略を日本株に当てる
+      - name: 同じ戦略を日本株の日足に当てる
         run: |
           set -e
           # 株向けにリスク設定をならす（BTC の最小単位や建玉上限は意味がないため）。
@@ -44,48 +29,51 @@ jobs:
               bot/config.yml > /tmp/stock.yml
 
           python - <<'PY'
-          import csv
-          from datetime import datetime, timezone
-          from pathlib import Path
+          from datetime import timezone
 
-          from bot.backtest import load_csv, run
+          import yfinance as yf
+
+          from bot.backtest import run
           from bot.config import Config
+          from bot.market import Candle
 
           NAMES = {
-              "1321": "日経225 ETF", "1306": "TOPIX ETF", "7203": "トヨタ",
-              "6758": "ソニー", "9984": "ソフトバンクG", "6857": "アドバンテスト",
+              "1321.T": "日経225 ETF", "1306.T": "TOPIX ETF", "7203.T": "トヨタ",
+              "6758.T": "ソニー", "9984.T": "ソフトバンクG", "6857.T": "アドバンテスト",
           }
 
-          # stooq の CSV を backtest が読める形に直す
-          for code in NAMES:
-              src = Path(f"/tmp/stock/{code}.raw.csv")
-              rows = list(csv.DictReader(src.open(encoding="utf-8")))
-              out = Path(f"/tmp/stock/{code}.csv")
-              with out.open("w", newline="", encoding="utf-8") as fh:
-                  w = csv.writer(fh)
-                  w.writerow(["timestamp", "open", "high", "low", "close", "volume"])
-                  for r in rows:
-                      if not r.get("Close"):
-                          continue
-                      w.writerow([r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r.get("Volume") or 0])
+          def fetch(ticker):
+              df = yf.Ticker(ticker).history(period="3y", interval="1d", auto_adjust=False)
+              out = []
+              for ts, row in df.iterrows():
+                  dt = ts.to_pydatetime()
+                  dt = dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+                  if row["Close"] != row["Close"]:  # NaN
+                      continue
+                  out.append(Candle(dt, float(row["Open"]), float(row["High"]),
+                                    float(row["Low"]), float(row["Close"]), float(row["Volume"] or 0)))
+              return out
 
           cfg = Config.load("/tmp/stock.yml")
           cfg.validate()
           print(f"戦略: SMA {cfg.strategy.params} / 日足 / 資金 {cfg.paper.initial_jpy:,.0f} 円")
           print(f"手数料 {cfg.paper.fee_rate:.2%} / 滑り {cfg.paper.slippage_rate:.2%}（株は現物手数料無料の想定）")
           print()
-          print(f"{'銘柄':14} {'戦略':>9} {'単純保有':>9} {'差':>8} {'取引':>5} {'勝率':>7} {'最大DD':>7}")
-          print("-" * 70)
-          for code, name in NAMES.items():
-              candles = load_csv(f"/tmp/stock/{code}.csv")[-750:]  # 直近およそ 3 年
+          print(f"{'銘柄':<16}{'戦略':>9}{'単純保有':>11}{'差':>9}{'取引':>6}{'勝率':>8}{'最大DD':>9}")
+          print("-" * 72)
+          for ticker, name in NAMES.items():
               try:
+                  candles = fetch(ticker)
+                  if not candles:
+                      print(f"{name:<16}データが取れませんでした")
+                      continue
                   r = run(candles, cfg)
               except Exception as exc:
-                  print(f"{name:14} 失敗: {exc}")
+                  print(f"{name:<16}失敗: {type(exc).__name__}: {exc}")
                   continue
               diff = r.return_pct - r.buy_hold_pct
-              print(f"{name:14} {r.return_pct:+8.2f}% {r.buy_hold_pct:+8.2f}% {diff:+7.2f}pt "
-                    f"{r.trades:4}回 {r.win_rate:6.1f}% {r.max_drawdown:6.2f}%")
-              if code == "1321":
-                  print(f"{'':14} 期間: {r.first:%Y-%m-%d} 〜 {r.last:%Y-%m-%d}")
+              print(f"{name:<16}{r.return_pct:+8.2f}%{r.buy_hold_pct:+10.2f}%{diff:+8.2f}pt"
+                    f"{r.trades:5}回{r.win_rate:7.1f}%{r.max_drawdown:8.2f}%")
+              if ticker == "1321.T":
+                  print(f"{'':<16}期間: {r.first:%Y-%m-%d} 〜 {r.last:%Y-%m-%d}（{len(candles)} 営業日）")
           PY
