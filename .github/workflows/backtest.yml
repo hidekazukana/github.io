@@ -38,8 +38,9 @@ jobs:
           from bot.market import Candle
 
           NAMES = {
-              "1321.T": "日経225 ETF", "1306.T": "TOPIX ETF", "7203.T": "トヨタ",
-              "6758.T": "ソニー", "9984.T": "ソフトバンクG", "6857.T": "アドバンテスト",
+              "BTC-JPY": "ビットコイン", "1321.T": "日経225 ETF", "1306.T": "TOPIX ETF",
+              "7203.T": "トヨタ", "6758.T": "ソニー", "9984.T": "ソフトバンクG",
+              "6857.T": "アドバンテスト",
           }
 
           def fetch(ticker):
@@ -74,6 +75,6 @@ jobs:
               diff = r.return_pct - r.buy_hold_pct
               print(f"{name:<16}{r.return_pct:+8.2f}%{r.buy_hold_pct:+10.2f}%{diff:+8.2f}pt"
                     f"{r.trades:5}回{r.win_rate:7.1f}%{r.max_drawdown:8.2f}%")
-              if ticker == "1321.T":
-                  print(f"{'':<16}期間: {r.first:%Y-%m-%d} 〜 {r.last:%Y-%m-%d}（{len(candles)} 営業日）")
+              if ticker == "BTC-JPY":
+                  print(f"{'':<16}期間: {r.first:%Y-%m-%d} 〜 {r.last:%Y-%m-%d}（{len(candles)} 日）")
           PY
