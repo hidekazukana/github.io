@@ -37,6 +37,22 @@ jobs:
             echo
           }
 
-          run_case 1h 720 9 26   # 現行の設定
-          run_case 4h 180 9 26   # 足だけ 4 時間に変える
-          run_case 4h 180 3 7    # 4 時間足で、見ている時間の長さを現行に近づける
+          # 手数料と滑りをゼロにして、敗因が費用なのか戦略なのかを切り分ける
+          run_free() {
+            fast="$1"; slow="$2"
+            sed -e "s/    fast: 9/    fast: $fast/" \
+                -e "s/    slow: 26/    slow: $slow/" \
+                -e "s/  fee_rate: 0.0012/  fee_rate: 0.0/" \
+                -e "s/  slippage_rate: 0.0005/  slippage_rate: 0.0/" \
+                bot/config.yml > /tmp/bt.yml
+            echo "==================================================="
+            echo "  1h / SMA $fast-$slow / 手数料ゼロ・滑りゼロ"
+            echo "==================================================="
+            python -m bot.backtest --config /tmp/bt.yml --limit 720 || echo "（失敗）"
+            echo
+          }
+
+          run_case 1h 720 9 26    # 現行（費用あり）
+          run_free 9 26           # 現行と同じ戦略を費用ゼロで
+          run_case 1h 720 25 75   # 取引回数を減らす（費用あり）
+          run_free 25 75          # それを費用ゼロで
