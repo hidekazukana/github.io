@@ -1,14 +1,13 @@
 name: backtest
 
-# 同じ期間・同じ資金で、足の長さを変えて比べるための使い捨てワークフロー。
-# 開発環境からは取引所に届かないので、ランナーを借りて実データで回す。
+# 開発環境からは外部に出られないので、ランナーを借りて実データで検証する。
 on:
   workflow_dispatch:
   push:
     paths: [".github/workflows/backtest.yml"]
 
 jobs:
-  compare:
+  stocks:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,39 +19,73 @@ jobs:
           cache-dependency-path: bot/requirements.txt
       - run: pip install -r bot/requirements.txt
 
-      - name: 足の長さを変えて同じ期間を比べる
+      - name: 日本株の日足を取ってくる
         run: |
           set -e
-          # 1h は 720 本、4h は 180 本 = どちらも 30 日ぶん
-          run_case() {
-            tf="$1"; limit="$2"; fast="$3"; slow="$4"
-            sed -e "s/  timeframe: 1h/  timeframe: $tf/" \
-                -e "s/    fast: 9/    fast: $fast/" \
-                -e "s/    slow: 26/    slow: $slow/" \
-                bot/config.yml > /tmp/bt.yml
-            echo "==================================================="
-            echo "  足 $tf / SMA $fast-$slow / $limit 本"
-            echo "==================================================="
-            python -m bot.backtest --config /tmp/bt.yml --limit "$limit" || echo "（この条件は失敗しました）"
-            echo
+          mkdir -p /tmp/stock
+          # stooq の無料日足 CSV（認証不要）。Date,Open,High,Low,Close,Volume で返る
+          for code in 1321 1306 7203 6758 9984 6857; do
+            curl -sS --retry 3 --max-time 60 \
+              -o "/tmp/stock/$code.raw.csv" \
+              "https://stooq.com/q/d/l/?s=$code.jp&i=d"
+            echo "$code: $(wc -l < /tmp/stock/$code.raw.csv) 行"
+            head -2 "/tmp/stock/$code.raw.csv"
+          done
+
+      - name: 同じ戦略を日本株に当てる
+        run: |
+          set -e
+          # 株向けにリスク設定をならす（BTC の最小単位や建玉上限は意味がないため）。
+          # 現物手数料は無料の証券会社が多いので 0。スプレッドぶんだけ滑りを残す。
+          sed -e "s/  fee_rate: 0.0012/  fee_rate: 0.0/" \
+              -e "s/  max_position_btc: 0.01/  max_position_btc: 100000/" \
+              -e "s/  min_order_btc: 0.0001/  min_order_btc: 0.0/" \
+              -e "s/  min_order_jpy: 500/  min_order_jpy: 100/" \
+              bot/config.yml > /tmp/stock.yml
+
+          python - <<'PY'
+          import csv
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          from bot.backtest import load_csv, run
+          from bot.config import Config
+
+          NAMES = {
+              "1321": "日経225 ETF", "1306": "TOPIX ETF", "7203": "トヨタ",
+              "6758": "ソニー", "9984": "ソフトバンクG", "6857": "アドバンテスト",
           }
 
-          # 手数料と滑りをゼロにして、敗因が費用なのか戦略なのかを切り分ける
-          run_free() {
-            fast="$1"; slow="$2"
-            sed -e "s/    fast: 9/    fast: $fast/" \
-                -e "s/    slow: 26/    slow: $slow/" \
-                -e "s/  fee_rate: 0.0012/  fee_rate: 0.0/" \
-                -e "s/  slippage_rate: 0.0005/  slippage_rate: 0.0/" \
-                bot/config.yml > /tmp/bt.yml
-            echo "==================================================="
-            echo "  1h / SMA $fast-$slow / 手数料ゼロ・滑りゼロ"
-            echo "==================================================="
-            python -m bot.backtest --config /tmp/bt.yml --limit 720 || echo "（失敗）"
-            echo
-          }
+          # stooq の CSV を backtest が読める形に直す
+          for code in NAMES:
+              src = Path(f"/tmp/stock/{code}.raw.csv")
+              rows = list(csv.DictReader(src.open(encoding="utf-8")))
+              out = Path(f"/tmp/stock/{code}.csv")
+              with out.open("w", newline="", encoding="utf-8") as fh:
+                  w = csv.writer(fh)
+                  w.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+                  for r in rows:
+                      if not r.get("Close"):
+                          continue
+                      w.writerow([r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r.get("Volume") or 0])
 
-          run_case 1h 720 9 26    # 現行（費用あり）
-          run_free 9 26           # 現行と同じ戦略を費用ゼロで
-          run_case 1h 720 25 75   # 取引回数を減らす（費用あり）
-          run_free 25 75          # それを費用ゼロで
+          cfg = Config.load("/tmp/stock.yml")
+          cfg.validate()
+          print(f"戦略: SMA {cfg.strategy.params} / 日足 / 資金 {cfg.paper.initial_jpy:,.0f} 円")
+          print(f"手数料 {cfg.paper.fee_rate:.2%} / 滑り {cfg.paper.slippage_rate:.2%}（株は現物手数料無料の想定）")
+          print()
+          print(f"{'銘柄':14} {'戦略':>9} {'単純保有':>9} {'差':>8} {'取引':>5} {'勝率':>7} {'最大DD':>7}")
+          print("-" * 70)
+          for code, name in NAMES.items():
+              candles = load_csv(f"/tmp/stock/{code}.csv")[-750:]  # 直近およそ 3 年
+              try:
+                  r = run(candles, cfg)
+              except Exception as exc:
+                  print(f"{name:14} 失敗: {exc}")
+                  continue
+              diff = r.return_pct - r.buy_hold_pct
+              print(f"{name:14} {r.return_pct:+8.2f}% {r.buy_hold_pct:+8.2f}% {diff:+7.2f}pt "
+                    f"{r.trades:4}回 {r.win_rate:6.1f}% {r.max_drawdown:6.2f}%")
+              if code == "1321":
+                  print(f"{'':14} 期間: {r.first:%Y-%m-%d} 〜 {r.last:%Y-%m-%d}")
+          PY
