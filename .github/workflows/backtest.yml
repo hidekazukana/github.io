@@ -1,0 +1,42 @@
+name: backtest
+
+# 同じ期間・同じ資金で、足の長さを変えて比べるための使い捨てワークフロー。
+# 開発環境からは取引所に届かないので、ランナーを借りて実データで回す。
+on:
+  workflow_dispatch:
+  push:
+    paths: [".github/workflows/backtest.yml"]
+
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: bot/requirements.txt
+      - run: pip install -r bot/requirements.txt
+
+      - name: 足の長さを変えて同じ期間を比べる
+        run: |
+          set -e
+          # 1h は 720 本、4h は 180 本 = どちらも 30 日ぶん
+          run_case() {
+            tf="$1"; limit="$2"; fast="$3"; slow="$4"
+            sed -e "s/  timeframe: 1h/  timeframe: $tf/" \
+                -e "s/    fast: 9/    fast: $fast/" \
+                -e "s/    slow: 26/    slow: $slow/" \
+                bot/config.yml > /tmp/bt.yml
+            echo "==================================================="
+            echo "  足 $tf / SMA $fast-$slow / $limit 本"
+            echo "==================================================="
+            python -m bot.backtest --config /tmp/bt.yml --limit "$limit" || echo "（この条件は失敗しました）"
+            echo
+          }
+
+          run_case 1h 720 9 26   # 現行の設定
+          run_case 4h 180 9 26   # 足だけ 4 時間に変える
+          run_case 4h 180 3 7    # 4 時間足で、見ている時間の長さを現行に近づける
