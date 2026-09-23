@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <title>はじめまして</title>
+  <style>
+    :root {
+      --bg: #fff7f2;
+      --card: #ffffff;
+      --text: #2b2b2b;
+      --sub: #777;
+      --accent: #ff6f61;
+      --chip: #ffe6e1;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1b1b1f;
+        --card: #26262c;
+        --text: #f2f2f2;
+        --sub: #aaa;
+        --accent: #ff8a7a;
+        --chip: #3a2f2e;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .card {
+      width: 100%;
+      max-width: 400px;
+      background: var(--card);
+      border-radius: 24px;
+      padding: 32px 24px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+      text-align: center;
+    }
+    .avatar {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--chip);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+    }
+    h1 { font-size: 26px; margin: 16px 0 4px; }
+    .name { color: var(--sub); margin: 0 0 20px; }
+    .intro { line-height: 1.8; margin: 0 0 20px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 28px; }
+    .chip { background: var(--chip); border-radius: 999px; padding: 6px 14px; font-size: 14px; }
+    .ask { font-weight: bold; margin: 0 0 16px; }
+    .btn {
+      display: block;
+      width: 100%;
+      border: none;
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      color: #fff;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .line { background: #06c755; }
+    .instagram { background: linear-gradient(45deg, #f58529, #dd2a7b, #8134af); }
+    .x { background: #000; }
+    .qr-toggle { background: var(--accent); }
+    .later { background: transparent; color: var(--sub); font-weight: normal; }
+    #qr { display: none; margin: 16px auto; padding: 12px; background: #fff; border-radius: 12px; width: fit-content; }
+    #thanks { display: none; margin-top: 12px; line-height: 1.8; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="avatar" id="avatar">🙂</div>
+    <h1>はじめまして！</h1>
+    <p class="name" id="name"></p>
+    <p class="intro" id="intro"></p>
+    <div class="chips" id="hobbies"></div>
+
+    <p class="ask">よかったら繋がりませんか？</p>
+    <div id="links"></div>
+    <button class="btn qr-toggle" id="qr-toggle" type="button">QRコードを表示</button>
+    <div id="qr"></div>
+    <button class="btn later" id="later" type="button">また今度にします</button>
+    <p id="thanks">話を聞いてくれてありがとうございました！<br>よい一日を 😊</p>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script>
+    // ===== ここを自分の情報に書き換える =====
+    const PROFILE = {
+      name: "ヒデ",
+      photo: "", // 画像URL（空なら絵文字を表示）
+      intro: "急に声をかけてすみません！\n雰囲気が素敵だったので、つい話しかけてしまいました。",
+      hobbies: ["カフェ巡り", "旅行", "プログラミング", "映画"],
+      links: {
+        line: "",      // 例: https://line.me/ti/p/xxxxxxxx
+        instagram: "", // 例: https://instagram.com/your_id
+        x: ""          // 例: https://x.com/your_id
+      },
+      qr: "line"       // QRにするリンク（line / instagram / x）
+    };
+    // =========================================
+
+    document.getElementById("name").textContent = PROFILE.name;
+    document.getElementById("intro").innerText = PROFILE.intro;
+
+    if (PROFILE.photo) {
+      const img = document.createElement("img");
+      img.src = PROFILE.photo;
+      img.alt = PROFILE.name;
+      img.className = "avatar";
+      document.getElementById("avatar").replaceWith(img);
+    }
+
+    const hobbies = document.getElementById("hobbies");
+    PROFILE.hobbies.forEach(h => {
+      const s = document.createElement("span");
+      s.className = "chip";
+      s.textContent = h;
+      hobbies.appendChild(s);
+    });
+
+    const labels = { line: "LINEで追加", instagram: "Instagramをフォロー", x: "Xをフォロー" };
+    const links = document.getElementById("links");
+    Object.entries(PROFILE.links).forEach(([key, url]) => {
+      if (!url) return;
+      const a = document.createElement("a");
+      a.className = "btn " + key;
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = labels[key];
+      links.appendChild(a);
+    });
+
+    const qrUrl = PROFILE.links[PROFILE.qr];
+    const qrBox = document.getElementById("qr");
+    const qrToggle = document.getElementById("qr-toggle");
+    if (!qrUrl || typeof QRCode === "undefined") {
+      qrToggle.style.display = "none";
+    } else {
+      new QRCode(qrBox, { text: qrUrl, width: 180, height: 180 });
+      qrToggle.addEventListener("click", () => {
+        const open = qrBox.style.display === "block";
+        qrBox.style.display = open ? "none" : "block";
+        qrToggle.textContent = open ? "QRコードを表示" : "QRコードを閉じる";
+      });
+    }
+
+    document.getElementById("later").addEventListener("click", () => {
+      document.getElementById("thanks").style.display = "block";
+    });
+  </script>
+</body>
+</html>
