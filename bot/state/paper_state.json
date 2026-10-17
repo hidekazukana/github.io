@@ -1,12 +1,12 @@
 {
-  "jpy": 10779.546307314657,
-  "btc": 0.0,
-  "avg_entry": 0.0,
+  "jpy": 3.281809531699764,
+  "btc": 0.00083433,
+  "avg_entry": 12916069.777885197,
   "realized_pnl_by_day": {
     "2026-10-16": 779.5463
   },
-  "last_trade_at": "2026-10-16T16:28:04+00:00",
-  "last_signal": "hold",
-  "updated_at": "2026-10-17T11:31:13+00:00",
-  "trade_count": 2
+  "last_trade_at": "2026-10-17T15:22:12+00:00",
+  "last_signal": "buy",
+  "updated_at": "2026-10-17T15:22:12+00:00",
+  "trade_count": 3
 }
